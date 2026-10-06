@@ -8,8 +8,8 @@
 
 - Mô hình (tên deployment hoặc `LAB_MODEL`), nhiệt độ (`LAB_TEMPERATURE`), `recursion_limit`: `openai:gpt-4.1-mini`, `0`, `60`.
 - Phiên bản Deep Agents (`pip show deepagents`), hệ điều hành, chạy trực tiếp hay trong Docker: `deepagents 0.7.21`; Windows 11 cho phát triển, Docker/Linux cho kiểm thử chính thức.
-- Số lần chạy tác vụ đã dùng / ngân sách:
-- Commit của tag `freeze`:
+- Số lần chạy tác vụ đã dùng / ngân sách: 21 lần (18 kết quả chính thức và 3 lần phát triển skills-auto); ngân sách không được chỉ định.
+- Commit của tag `freeze`: `0630af8`.
 
 ## 2. Giả thuyết (commit TRƯỚC tag `freeze`, Phần 4.0)
 
@@ -67,28 +67,53 @@ Kết quả Phần 3.4: code 6/10 (81.400 token), data 4/8 (80.029), logs 5/9 (7
 ## 7. Kết quả so sánh (Phần 4.3, 4.4)
 
 ```text
-(dán bảng ở đây)
+| Task | baseline | subagents | skills-auto |
+|---|---|---|---|
+| code-learn | 6/10 | 6/10 | 6/10 |
+| data-learn | 5/8 | 1/8 | 5/8 |
+| logs-learn | 1/9 | 1/9 | 1/9 |
+| code-eval | 6/11 | 6/11 | 6/11 |
+| data-eval | 5/9 | 2/9 | 5/9 |
+| logs-eval | 1/10 | 0/10 | 6/10 |
+| Mean score - learning tasks | 0.45 | 0.28 | 0.45 |
+| Mean score - evaluation tasks | 0.40 | 0.26 | 0.57 |
+| Mean tokens per run | 59,159 | 47,230 | 52,202 |
+| Runs that read a skill | 0/6 | 0/6 | 0/6 |
+
+condition     role    technical  house rules  mean tokens  read a skill
+baseline      eval     12/18         0/12          56,899      0/3
+baseline      learn    12/18         0/9           61,419      0/3
+subagents     eval      8/18         0/12          43,924      0/3
+subagents     learn     8/18         0/9           50,536      0/3
+skills-auto   eval     17/18         0/12          52,504      0/3
+skills-auto   learn    12/18         0/9           51,901      0/3
 ```
+
+Không có run nào có `error` hoặc `skills_modified = true`. `verify_freeze.py` chạy trong Linux báo `checked 6 runs of skill conditions: OK`. Khi chạy verifier trên Windows, hash khác do `hash_skills` dùng ký tự phân cách đường dẫn (`\` so với `/`); đối chiếu trong cùng môi trường Linux xác nhận hash của sáu run đúng với skill đã freeze.
 
 ## 8. Phân tích
 
-1. So với `baseline`, điều kiện nào cải thiện điểm tác vụ học và tác vụ đánh giá?
-2. Tách điểm thành check kỹ thuật và check quy ước (`rule_`).
-3. Dựa vào vết và `skills_read`, giải thích một check mà skill giúp đạt và một check mà skill không giúp.
-4. So sánh chi phí token và hiệu quả điểm trên mỗi token.
-5. Có dấu hiệu rò rỉ dữ liệu hoặc quá khớp nào không?
-6. So sánh nhiễu giữa lần chạy Phần 3.4 và sau đóng băng.
+1. Trên task học, baseline và skills-auto cùng đạt trung bình 0,45; subagents giảm còn 0,28. Trên task đánh giá, skills-auto đạt 0,57, cao hơn baseline 0,40; subagents giảm còn 0,26. Chênh lệch skills-auto chủ yếu đến từ `logs-eval` (6/10 so với baseline 1/10), không phải cải thiện đồng đều: code và data giữ nguyên baseline. Vì không có skill nào được đọc và nhiễu task học lớn, kết quả không đủ để kết luận skill gây ra cải thiện.
+2. Baseline đạt 12/18 check kỹ thuật ở cả learn và eval nhưng 0/9 và 0/12 check quy ước. Subagents giảm check kỹ thuật xuống 8/18 ở cả hai vai trò và vẫn 0 check quy ước. Skills-auto giữ 12/18 kỹ thuật trên learn và tăng lên 17/18 trên eval, nhưng vẫn 0/12 quy ước eval. Như vậy quy ước mới không được giải quyết; phần tăng chỉ nằm ở check kỹ thuật của log.
+3. Ở `logs-eval`, skills-auto đạt `entry_count`, `timestamps_utc`, `levels_uppercase`, `repeat_counts`, `counts_by_service`, trong khi baseline chỉ đạt `valid_structure`. Trace cho thấy agent viết parser Python thay vì chép JSON thủ công, nhưng `skills_read = 0`, nên chỉ có thể nói hành vi trùng với mô tả skill, không thể nói agent đã đọc và làm theo skill. Bốn check `rule_service_names`, `rule_sorted_errors`, `rule_schema_header`, `rule_source_line` đều không đạt; không đọc `SKILL.md` giải thích vì sao các chỉ dẫn quy ước chi tiết không được áp dụng.
+4. Token trung bình toàn bộ run: baseline 59.159, subagents 47.230, skills-auto 52.202. Nếu lấy trung bình learn/eval bằng nhau, điểm trung bình xấp xỉ 0,425; 0,270; 0,510, tương ứng khoảng 7,2; 5,7; 9,8 điểm chuẩn hóa trên một triệu token. Skills-auto có tỷ lệ điểm/token cao nhất trong mẫu này; subagents thấp nhất. Token thấp của subagents phần nào do data/logs kết thúc sớm với kết quả kém, nên không phải tiết kiệm hiệu quả.
+5. `validate_skill` loại marker eval và curator chỉ đọc run có `role == learn`; ba skill không chứa id/tệp/con số của eval, nên không thấy rò rỉ dữ liệu. Có nguy cơ quá khớp quy ước học, nhưng dữ liệu không cho thấy “học thuộc” thành công vì mọi điều kiện vẫn đạt 0 check quy ước eval và `skills_read = 0`.
+6. Với cùng bộ skill, lần phát triển so với sau freeze: code 6/10 → 6/10 (0), data 4/8 → 5/8 (+0,125), logs 5/9 → 1/9 (-0,444). Điểm trung bình task học giảm khoảng 0,107 (0,552 → 0,445). Biến động này lớn hơn nhiều chênh lệch ở một số ô của bảng, nên kết luận từ một lần chạy phải rất thận trọng.
 
 ## 9. Hạn chế và tính hợp lệ
 
-1.
-2.
-3.
+1. Chỉ có ba task cho mỗi vai trò và mỗi cấu hình chính thức chạy một lần; một outlier như `logs-eval` có thể thay đổi mạnh trung bình, làm độ tin cậy thống kê thấp.
+2. Mô hình có tính ngẫu nhiên dù temperature bằng 0; chênh lệch logs-learn 5/9 xuống 1/9 với cùng skill cho thấy backend/model/tool trajectory vẫn gây nhiễu đáng kể.
+3. Các task và house rule do giảng viên thiết kế, nên kết quả có thể không đại diện cho dự án phần mềm, dữ liệu và log thực tế.
+4. Chỉ dùng một model (`gpt-4.1-mini`); kết luận về subagent và skill có thể thay đổi với model có khả năng lập kế hoạch hoặc dùng tool khác.
+5. `skills_read` chỉ đếm `read_file` ở luồng chính; nó không đo ảnh hưởng của metadata `name`/`description` đã xuất hiện trong system prompt, và cũng không thấy hoạt động bên trong subagent.
 
 ## 10. Kết luận
 
+Trong thí nghiệm này, subagents không cải thiện điểm và có hiệu quả điểm/token thấp hơn baseline. Skills-auto đạt điểm đánh giá trung bình cao nhất, chủ yếu nhờ check kỹ thuật của một task log, nhưng không cải thiện bất kỳ house rule đánh giá nào. Vì `skills_read = 0` ở mọi run và cùng skill tạo kết quả task học biến động mạnh, chưa thể quy cải thiện cho nội dung skill. Quy trình freeze không phát hiện rò rỉ dữ liệu và verifier Linux báo OK. Bước tiếp theo nên lặp mỗi cấu hình nhiều lần và cải thiện cơ chế bắt buộc đọc skill phù hợp trước khi so sánh lại.
+
 ## Phụ lục
 
-- Lệnh đã chạy (theo thứ tự):
-- Thử thách mở rộng (nếu có):
-- Ghi chú khác:
+- Lệnh đã chạy (theo thứ tự): tạo `.venv`; `pip install -e .`; `pytest`; `scripts/tour.py`; các lệnh `lab.runner` cho baseline/subagents/skills-auto; `lab.curator`; commit `hypotheses`; tag `freeze`; `verify_freeze.py`; `lab.compare`; `check_breakdown.py`.
+- Thử thách mở rộng (nếu có): không thực hiện.
+- Ghi chú khác: các lần chạy Linux thực hiện trong container `lab-deepagents-work`; verifier cần chạy cùng môi trường Linux do hash có chứa ký tự phân cách đường dẫn.
